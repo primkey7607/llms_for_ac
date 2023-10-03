@@ -41,11 +41,16 @@ def get_response(chat, temp_val, timeout=30):
     return chat_response
 
 def user_to_nl(user_st):
-    u_parts = user_st.split(' ')
-    name = u_parts[2]
-    role = u_parts[-1][:-1] #exclude the semicolon
-    
-    user_nl = 'Create user ' + name + ' in the role ' + role + '.'
+    if 'IN ROLE' not in user_st:
+        u_parts = user_st.split(' ')
+        name = u_parts[-1][:-1]
+        user_nl = 'Create user ' + name + '.'
+    else:
+        u_parts = user_st.split(' ')
+        name = u_parts[2]
+        role = u_parts[-1][:-1] #exclude the semicolon
+        
+        user_nl = 'Create user ' + name + ' in the role ' + role + '.'
     
     return user_nl, name
 
