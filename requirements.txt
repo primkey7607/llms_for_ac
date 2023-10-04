@@ -1,0 +1,6 @@
+json
+sqlalchemy
+psycopg2-binary
+openai
+tenacity
+tiktoken
