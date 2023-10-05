@@ -141,8 +141,8 @@ def gen_tp1sql(new_tp1acmpath):
     return nl2sql
 
 if __name__=='__main__':
-    tp2totp1('acmgen/dacview_test_type2acm.csv', 'dacview_test_tp2totp1_all', 'dacview_tp2tp1')
-    reconstruct_type1('acmgen/dacview_test_type2acm.csv', 'dacview_test_tp2totp1_all/dacview_tp2tp1')
+    tp2totp1('../acmgen/dacview_test_type2acm.csv', 'dacview_test_tp2totp1_all', 'dacview_tp2tp1')
+    reconstruct_type1('../acmgen/dacview_test_type2acm.csv', 'dacview_test_tp2totp1_all/dacview_tp2tp1')
     gen_tp1sql('dacview_test_tp2totp1_all/dacview_tp2tp1.csv')
     
         
