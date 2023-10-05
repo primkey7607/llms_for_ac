@@ -70,7 +70,7 @@ def tp2totp1(tp2acmpath, outdir, outname, max_rows=None, max_cols=None):
     if not os.path.exists(outdir):
         os.mkdir(outdir)
     df = pd.read_csv(tp2acmpath)
-    tbls = get_tbl_schema()
+    tbls = get_tbl_schema({})
     db_schema = get_schema()
     col_cnt = 0
     for c in df.columns:
@@ -113,6 +113,8 @@ def reconstruct_type1(tp2_path, new_name):
         new_dct[new_tp1] = df[c].tolist()
         
         tp2totp1[c] = new_tp1
+        
+        col_cnt += 1
     
     new_df = pd.DataFrame(new_dct)
     new_df.to_csv(new_name + '.csv', index=False)
@@ -139,9 +141,9 @@ def gen_tp1sql(new_tp1acmpath):
     return nl2sql
 
 if __name__=='__main__':
-    tp2totp1('dacview_test_type2acm.csv', 'dacview_test_tp2totp1_all', 'dacview_tp2tp1')
-    reconstruct_type1('dacview_test_type2acm.csv', 'dacview_tp2tp1')
-    gen_tp1sql('dacview_tp2tp1.csv')
+    tp2totp1('acmgen/dacview_test_type2acm.csv', 'dacview_test_tp2totp1_all', 'dacview_tp2tp1')
+    reconstruct_type1('acmgen/dacview_test_type2acm.csv', 'dacview_test_tp2totp1_all/dacview_tp2tp1')
+    gen_tp1sql('dacview_test_tp2totp1_all/dacview_tp2tp1.csv')
     
         
         
