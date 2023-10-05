@@ -7,6 +7,7 @@ import signal
 from ast import literal_eval
 from type1tosql import tp1totp0, reconstruct_type0, tp0tosentences
 from type2tosql import tp2totp1, reconstruct_type1
+from Levenshtein import distance as lev
 from c3_utils import get_schema, c3_e2e
 from tenacity import (
     retry,
@@ -159,14 +160,30 @@ def schema_to_st(db_schema : dict):
     
     return schema
 
-def parse_role(response : str, db_roles : list):
+def find_nearest_lev(response, db_roles):
+    min_lev = lev(response, db_roles[0])
+    out_min = db_roles[0]
+    for r in db_roles:
+        if lev(response, r) < min_lev:
+            min_lev = lev(response, r)
+            out_min = r
+    print("Minimum was: {}, {}".format(min_lev, out_min))
+    return out_min
+    
+
+def parse_role(response : str, db_roles : list, alt_sim='levenshtein'):
     lst = [r for r in db_roles if r in response]
     if len(lst) > 1:
         print("Detected more than one role. Choosing First: {}".format(lst))
     
+    if lst == []:
+        print("ChatGPT failed to pick term from list: {}, {}".format(response, db_roles))
+        if alt_sim == 'levenshtein':
+            return find_nearest_lev(response, db_roles)
+    
     return lst[0]
 
-def t3sent_to_t2(role_st : str, db_roles : list):
+def t3sent_to_t2(role_st : str, db_roles : list, alt_sim='levenshtein'):
     chat = [{'role' : 'system', 'content' : 'You are a helpful assistant.'}]
     prompt = '### Choose the role from the list that best fits the given role description. \n ###  Roles: \n ' + str(db_roles)
     prompt += '\n### Description: \n ' + role_st
@@ -235,9 +252,10 @@ def gen_tp2sql(new_tp2acmpath):
     tp2totp1(new_tp2acmpath, '.', tp2_outname)
     reconstruct_type1(new_tp2acmpath, tp2_outname)
     
+    new_tp1acmpath = tp2_outname + '.csv'
     tp1_outname = tp2_outname + '_totp0'
-    tp1totp0(tp2_outname, tp1_outname)
-    reconstruct_type0(tp2_outname, tp1_outname)
+    tp1totp0(new_tp1acmpath, tp1_outname)
+    reconstruct_type0(new_tp1acmpath, tp1_outname)
     tp0acmpath = tp1_outname + '.csv'
     
     sentences = tp0tosentences(tp0acmpath)
@@ -250,7 +268,7 @@ def gen_tp2sql(new_tp2acmpath):
     return nl2sql
 
 if __name__=='__main__':
-    tp3totp2('dacview_test_type3acm.csv', 'dacview_test_tp3totp2_all', 'dacview_tp3tp2')
-    reconstruct_type2('dacview_test_type3acm.csv', 'dacview_tp3tp2')
-    gen_tp2sql('dacview_tp3tp2.csv')
+    tp3totp2('../acmgen/dacview_test_type3acm.csv', 'dacview_test_tp3totp2_all', 'dacview_tp3tp2')
+    reconstruct_type2('../acmgen/dacview_test_type3acm.csv', 'dacview_test_tp3totp2_all/dacview_tp3tp2')
+    gen_tp2sql('dacview_test_tp3totp2_all/dacview_tp3tp2.csv')
 

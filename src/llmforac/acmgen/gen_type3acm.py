@@ -138,6 +138,8 @@ def tp0role_to_tp3(role_st : str, perturb_types : list):
 #we generate natural language using natural language perturbations described
 #in Dr. Spider, here: https://openreview.net/forum?id=Wc5bmZZU9cy
 def type2totype3(acm_path, perturb_types, outdir, outname, max_rows=None, max_cols=None):
+    if not os.path.exists(outdir):
+        os.mkdir(outdir)
     df = pd.read_csv(acm_path)
     tp0_roles = df['Role'].tolist()
     
@@ -165,7 +167,13 @@ def construct_type3(acm_path, lst_pos, sent_dir, sent_name, new_name):
         with open(outfile, 'r') as fh:
             new_roles = literal_eval(fh.read())
         
-        new_role = new_roles[lst_pos]
+        #we should not the use alternatives for CREATE USER...because those are confusing,
+        #and it's unclear what the synonym of a name, like "Gisela" is.
+        if 'CREATE' in role:
+            new_role = role
+        else:
+            new_role = new_roles[lst_pos]
+        
         tp3_roles.append(new_role)
         
         tp2totp3[role] = new_role
@@ -179,5 +187,5 @@ def construct_type3(acm_path, lst_pos, sent_dir, sent_name, new_name):
 
 if __name__=='__main__':
     type2totype3('dacview_test_type2acm.csv', ['desc_replace'], 'dacview_type3_allsents', 'dacview_test_type3')
-    construct_type3('dacview_test_type3acm.csv', 0, 'dacview_type3_allsents', 'dacview_test_type3', 'dacview_test_type3acm')
+    construct_type3('dacview_test_type2acm.csv', 0, 'dacview_type3_allsents', 'dacview_test_type3', 'dacview_test_type3acm')
             
