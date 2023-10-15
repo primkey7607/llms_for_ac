@@ -1,5 +1,6 @@
 json
 sqlalchemy
+sqlite3
 psycopg2-binary
 openai
 tenacity
