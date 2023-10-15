@@ -54,8 +54,9 @@ def schema_to_st(db_schema : dict):
 
 def t2sent_to_t1(view_st, db_schema):
     chat = [{'role' : 'system', 'content' : 'You are a helpful assistant.'}]
+    print("Schema String: {}".format(schema_to_st(db_schema)))
     prompt = '### Complete postgres SQL statement only and with no explanation, and do not grant privileges on tables, roles, and users that are not explicitly requested in the statement. \n ### Postgres SQL tables, with their properties:'
-    prompt += ' \n ' + schema_to_st(db_schema) + '\n#\n### ' + view_st +  '\nCREATE'
+    prompt += ' \n ' + schema_to_st(db_schema) + '\n#\n### ' + view_st +  '\nCREATE VIEW'
     chat += [{'role' : 'user', 'content' : prompt}]
     view_sql = get_response(chat, 0.0)
     if view_sql.startswith('CREATE CREATE'):

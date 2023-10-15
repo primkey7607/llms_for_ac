@@ -5,6 +5,7 @@ import psycopg2
 import openai
 import signal
 from ast import literal_eval
+from utils.chat_utils import get_response, parse_lst
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -12,46 +13,46 @@ from tenacity import (
     retry_if_exception_type
 )  # for exponential backoff
 
-class MyTimeoutException(Exception):
-    pass
+# class MyTimeoutException(Exception):
+#     pass
 
-#register a handler for the timeout
-def handler(signum, frame):
-    print("Waited long enough!")
-    raise MyTimeoutException("STOP")
+# #register a handler for the timeout
+# def handler(signum, frame):
+#     print("Waited long enough!")
+#     raise MyTimeoutException("STOP")
     
-def get_schema(db_details):
-    #for now, let's just hardcode it
-    return str(['supplier', 'customer', 'lineitem','region',
-            'orders', 'partsupp', 'part', 'nation'])
+# def get_schema(db_details):
+#     #for now, let's just hardcode it
+#     return str(['supplier', 'customer', 'lineitem','region',
+#             'orders', 'partsupp', 'part', 'nation'])
 
-@retry(retry=retry_if_exception_type(Exception), wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
-def get_response(chat, temp_val, timeout=30):
+# @retry(retry=retry_if_exception_type(Exception), wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+# def get_response(chat, temp_val, timeout=30, write_dir=None):
     
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=chat,
-        temperature=temp_val
-    )
-    chat_response = response["choices"][0]["message"]["content"]
-    print("Received response: {}".format(chat_response))
-    return chat_response
+#     response = openai.ChatCompletion.create(
+#         model="gpt-3.5-turbo",
+#         messages=chat,
+#         temperature=temp_val
+#     )
+#     chat_response = response["choices"][0]["message"]["content"]
+#     print("Received response: {}".format(chat_response))
+#     return chat_response
 
-def parse_lst(lst_resp):
-    #chatgpt will delimit code by three apostrophes
-    query_st = lst_resp
-    if '```' in query_st:
-        query_parts = query_st.split('```')
-        queries = [qp for i,qp in enumerate(query_parts) if i % 2 == 1]
-        out_st = queries[0]
-    else:
-        out_st = query_st
-    out_st = out_st[out_st.index('[') : out_st.index(']') + 1]
-    out_st.replace('\n', '')
-    out_st.replace('\r', '')
-    out_st.replace(' ', '')
-    out_lst = literal_eval(out_st)
-    return out_lst
+# def parse_lst(lst_resp):
+#     #chatgpt will delimit code by three apostrophes
+#     query_st = lst_resp
+#     if '```' in query_st:
+#         query_parts = query_st.split('```')
+#         queries = [qp for i,qp in enumerate(query_parts) if i % 2 == 1]
+#         out_st = queries[0]
+#     else:
+#         out_st = query_st
+#     out_st = out_st[out_st.index('[') : out_st.index(']') + 1]
+#     out_st.replace('\n', '')
+#     out_st.replace('\r', '')
+#     out_st.replace(' ', '')
+#     out_lst = literal_eval(out_st)
+#     return out_lst
 
 def user_to_nl(user_st):
     if 'IN ROLE' not in user_st:
@@ -114,7 +115,7 @@ def desc_replace(role_name : str):
     init_resp = get_response(chat, 0.0)
     
     chat += [{'role' : 'assistant', 'content' : init_resp}]
-    followup = 'List the synonyms as a python list.'
+    followup = 'List the descriptions as a python list.'
     chat += [{'role' : 'user', 'content' : followup}]
     lst_resp = get_response(chat, 0.0)
     
