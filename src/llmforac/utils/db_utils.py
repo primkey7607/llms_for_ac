@@ -129,7 +129,10 @@ class PostgresAPI(DBAPI):
         df.to_sql(tbl_name, eng, if_exists='replace')
     
     def get_schema(self):
-        schema_details = self.query('SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = \'public\';')
+        #the below also gets views, which we don't want.
+        # schema_details = self.query('SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = \'public\';')
+        #instead, we only get base tables using the following query
+        schema_details = self.query('SELECT INFORMATION_SCHEMA.COLUMNS.table_name, INFORMATION_SCHEMA.COLUMNS.column_name, INFORMATION_SCHEMA.COLUMNS.data_type FROM INFORMATION_SCHEMA.COLUMNS INNER JOIN INFORMATION_SCHEMA.TABLES ON INFORMATION_SCHEMA.COLUMNS.table_name = INFORMATION_SCHEMA.TABLES.table_name WHERE INFORMATION_SCHEMA.COLUMNS.table_schema = \'public\' and table_type = \'BASE TABLE\';')
         tabcols = {}
         for tup in schema_details:
             tab = tup[0]

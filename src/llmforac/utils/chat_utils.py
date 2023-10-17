@@ -66,3 +66,49 @@ def parse_lst(lst_resp):
     out_lst = literal_eval(out_st)
     return out_lst
 
+def parse_el(raw_resp : str, lst : list, neg_code : str):
+    lower_lst = [el.lower() for el in lst]
+    l_neg = neg_code.lower()
+    l_resp = raw_resp.lower()
+    present_els = [lst[i] for i,el in enumerate(lower_lst) if el in l_resp]
+    absent = (l_neg in l_resp)
+    
+    if absent and present_els != []:
+        if l_resp.startswith(l_neg):
+            return neg_code
+        print("WARNING: assuming first element found in response is correct: {}, {}".format(present_els[0], raw_resp))
+        return present_els[0]
+    elif absent and present_els == []:
+        return neg_code
+    elif not absent and present_els == []:
+        print("WARNING: Assuming none, but retry may be needed: {}".format(raw_resp))
+        return neg_code
+    elif not absent and present_els != []:
+        if len(present_els) > 1:
+            print("WARNING: Assuming first element found in response is correct: {}, {}".format(present_els, raw_resp))
+            return present_els[0]
+    else:
+        raise Exception("Not all cases captured: {}, {}".format(absent, present_els))
+
+def parse_yn(raw_resp : str):
+    if 'YES' in raw_resp and 'NO' not in raw_resp:
+        return 'YES'
+    elif 'YES' not in raw_resp and 'NO' in raw_resp:
+        return 'NO'
+    elif 'YES' not in raw_resp and 'NO' not in raw_resp:
+        print("WARNING: response is unclear, so defaulting to 'no': {}".format(raw_resp))
+        return 'NO'
+    elif 'YES' in raw_resp and 'NO' in raw_resp:
+        print("WARNING: choosing earlier token: {}".format(raw_resp))
+        y_ind = raw_resp.index('YES')
+        n_ind = raw_resp.index('NO')
+        if y_ind < n_ind:
+            return 'YES'
+        else:
+            return 'NO'
+    else:
+        raise Exception("Not all cases captured: {}".format(raw_resp))
+    
+    
+    
+
