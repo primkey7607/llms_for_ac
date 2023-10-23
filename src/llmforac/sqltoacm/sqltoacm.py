@@ -167,6 +167,14 @@ def compare_type0privs(type0df, acmdf, in_dir, in_pref : str, outdir, outname):
             out_tup = (answer, raw_resp)
             with open(outfile, 'w+') as fh:
                 print(out_tup, file=fh)
+
+def db_vs_acm(acmdf, indir, inpref, outdir, outpref, db_details):
+    sql_to_type0(db_details, outpref)
+    type0df = pd.read_csv(outpref + '_type0.csv')
+    compare_type0views(type0df, acmdf, indir, inpref)
+    compare_type0roles(type0df, acmdf, indir, inpref)
+    compare_type0privs(type0df, acmdf, indir, inpref, outdir, outpref)
+    
     
 
 
