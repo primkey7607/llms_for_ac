@@ -1,12 +1,13 @@
 import pandas as pd
 import os
+import re
 from sqlalchemy import engine
 import psycopg2
 import openai
 import functools
 import signal
 from ast import literal_eval
-from utils.chat_utils import get_response, parse_el, parse_yn
+from utils.chat_utils import get_response, parse_el, parse_yn, parse_elv2
 from utils.db_utils import PostgresAPI, views_are_equal
 from tenacity import (
     retry,
@@ -32,15 +33,50 @@ def nlvssql_views(nl_acmdf, sql_acmdf, nl_cols, sql_cols, outdir, outname):
         prompt += ' If you are unsure, make your best guess.'
         
         chat += [{'role' : 'user', 'content' : prompt}]
-        raw_resp = get_response(chat, 0.0)
-        parsed = parse_el(raw_resp, db_views, 'None')
+        raw_resp = get_response(chat, 0.0, write_dir=outdir, write_file=outname + '_nlvssql_view' + str(i) + '_chat.json')
+        parsed = parse_elv2(raw_resp, db_views, 'None')
         print("Parsed Answer: {}".format(parsed))
         answer = (parsed, raw_resp)
         with open(outfile, 'w+') as fh:
             print(answer, file=fh)
 
+def sqlvsnl_views(nl_acmdf, sql_acmdf, lst_acmpath, nl_cols, sql_cols, outdir, outname):
+    acm_views = [c for c in nl_acmdf.columns.tolist() if c != 'Role']
+    db_views = sql_cols
+    
+    for i, db_v in enumerate(db_views):
+        if db_v not in sql_cols:
+            continue
+        outfile = os.path.join(outdir, outname + '_sqlvsnl_view' + str(i) + '.txt')
+        outchat = os.path.join(outdir, outname + '_sqlvsnl_view' + str(i) + '_chat.json')
+        if os.path.exists(outfile):
+            continue
+        chat = [{'role' : 'system', 'content' : 'You are a helpful assistant.'}]
+        
+        prompt1 = 'Consider the following SQL for a table or view: ' + db_v + '. '
+        prompt1 += 'Explain what this query does in plain english.'
+        chat += [{'role' : 'user', 'content' : prompt1}]
+        raw_resp1 = get_response(chat, 0.0)
+        chat += [{'role' : 'assistant', 'content' : raw_resp1}]
+        
+        prompt2 = 'Consider the following list of descriptions of views in a database:\n\n' + str(acm_views) + '\n\n'
+        prompt2 += 'Which description from the list does the given query most likely describe? Begin your answer with this description. If none of them match, begin your answer with None.'
+        prompt2 += ' If you are unsure, make your best guess.'
+        
+        chat += [{'role' : 'user', 'content' : prompt2}]
+        raw_resp = get_response(chat, 0.0, write_dir=outdir, write_file=outname + '_sqlvsnl_view' + str(i) + '_chat.json')
+        chat += [{'role' : 'assistant', 'content' : raw_resp}]
+        parsed = parse_elv2(raw_resp, acm_views, 'None')
+        print("Parsed Answer: {}".format(parsed))
+        answer = (parsed, raw_resp, lst_acmpath)
+        with open(outfile, 'w+') as fh:
+            print(answer, file=fh)
+        
+        # with open(outchat, 'w+') as fh:
+        #     print(chat, file=fh)
+
 def nlvsnl_views(nldf1, nldf2, nl1_cols, nl2_cols, outdir, outname):
-    views1 = nldf1.columns.tolist()
+    views1 = [c for c in nldf1.columns.tolist() if c != 'Role']
     views2 = nl2_cols
     for i,v1 in enumerate(views1):
         if v1 not in nl1_cols:
@@ -48,18 +84,25 @@ def nlvsnl_views(nldf1, nldf2, nl1_cols, nl2_cols, outdir, outname):
         outfile = os.path.join(outdir, outname + '_nlvsnl_view' + str(i) + '.txt')
         if os.path.exists(outfile):
             continue
-        chat = [{'role' : 'system', 'content' : 'You are a helpful assistant.'}]
-        prompt = 'Consider the following list of descriptions for tables and views in a database:\n\n' + str(views2) + '\n\n'
-        prompt += 'Consider the following phrase describing a table or view: ' + v1 + '. '
-        prompt += 'Which database table or view description from the list most likely describes the same table or view as this phrase? Begin your answer with your chosen description from the list. If none of them match, begin your answer with None.'
-        prompt += ' If you are unsure, make your best guess.'
         
-        chat += [{'role' : 'user', 'content' : prompt}]
-        raw_resp = get_response(chat, 0.0)
-        parsed = parse_el(raw_resp, views2, 'None')
-        answer = (parsed, raw_resp)
-        with open(outfile, 'w+') as fh:
-            print(answer, file=fh)
+        #first, check for string similarity.
+        if v1 in views2:
+            answer = (v1, 'Exact Match')
+            with open(outfile, 'w+') as fh:
+                print(answer, file=fh)
+        else:
+            chat = [{'role' : 'system', 'content' : 'You are a helpful assistant.'}]
+            prompt = 'Consider the following list of descriptions for tables and views in a database:\n\n' + str(views2) + '\n\n'
+            prompt += 'Consider the following phrase describing a table or view: ' + v1 + '. '
+            prompt += 'Which database table or view description from the list most likely describes the same table or view as this phrase? Begin your answer with your chosen description from the list. If none of them match, begin your answer with None.'
+            prompt += ' If you are unsure, make your best guess.'
+            
+            chat += [{'role' : 'user', 'content' : prompt}]
+            raw_resp = get_response(chat, 0.0, write_dir=outdir, write_file=outname + '_nlvsnl_view' + str(i) + '_chat.json')
+            parsed = parse_elv2(raw_resp, views2, 'None')
+            answer = (parsed, raw_resp)
+            with open(outfile, 'w+') as fh:
+                print(answer, file=fh)
 
 def sqlvssql_views(sqldf1, sqldf2, sql1_cols, sql2_cols, outdir, outname, db_details):
     cols1 = sqldf1.columns.tolist()
@@ -107,12 +150,14 @@ def sqlvssql_views(sqldf1, sqldf2, sql1_cols, sql2_cols, outdir, outname, db_det
             
         
 
-def diff_views(acmdf1, acmdf2, outdir, outname, db_details):
+def diff_views(acmpath1, acmpath2, outdir, outname, db_details):
     '''
     We'll use prompting to compare views.
     But we need a prompt (or going straight to the DB) that compares SQL queries if they are equivalent,
     we need a prompt for ACM to SQL (that is the sqltoacm prompt), and we need a prompt for comparing natural language
     '''
+    acmdf1 = pd.read_csv(acmpath1)
+    acmdf2 = pd.read_csv(acmpath2)
     cols1 = acmdf1.columns.tolist()
     cols2 = acmdf2.columns.tolist()
     
@@ -120,8 +165,8 @@ def diff_views(acmdf1, acmdf2, outdir, outname, db_details):
     schema = pgapi.get_schema()
     sql1_cols = [c for c in cols1 if 'CREATE VIEW' in c or c in schema]
     sql2_cols = [c for c in cols2 if 'CREATE VIEW' in c or c in schema]
-    nl1_cols = [c for c in cols1 if c not in sql1_cols]
-    nl2_cols = [c for c in cols2 if c not in sql2_cols]
+    nl1_cols = [c for c in cols1 if c not in sql1_cols and c != 'Role']
+    nl2_cols = [c for c in cols2 if c not in sql2_cols and c != 'Role']
     
     #NL vs NL
     if nl1_cols != [] and nl2_cols != []:
@@ -129,40 +174,75 @@ def diff_views(acmdf1, acmdf2, outdir, outname, db_details):
     
     #NL vs SQL
     if nl1_cols != [] and sql2_cols != []:
-        nlvssql_views(acmdf1, acmdf2, nl1_cols, sql2_cols, outdir, outname)
+        # nlvssql_views(acmdf1, acmdf2, nl1_cols, sql2_cols, outdir, outname)
+        sqlvsnl_views(acmdf1, acmdf2, acmpath1, nl1_cols, sql2_cols, outdir, outname)
     
     #SQL vs NL
     if nl2_cols != [] and sql1_cols != []:
-        nlvssql_views(acmdf2, acmdf1, nl2_cols, sql1_cols, outdir, outname)
+        # nlvssql_views(acmdf2, acmdf1, nl2_cols, sql1_cols, outdir, outname)
+        sqlvsnl_views(acmdf2, acmdf1, acmpath2, nl2_cols, sql1_cols, outdir, outname)
     
     #SQL vs SQL
     if sql1_cols != [] and sql2_cols != []:
         sqlvssql_views(acmdf1, acmdf2, sql1_cols, sql2_cols, outdir, outname, db_details)
 
+def pattern_matches(pattern, st):
+    match_obj = pattern.match(st)
+    if match_obj == None:
+        print("Match object was false, no match")
+        return False
+    elif match_obj.group() == st:
+        print("Match object was true, and there was a match")
+        return True
+    
+    print("Match object matched only on part of the string, but not the whole thing: {}, {}".format(match_obj, st))
+    return False
+
 #what views in acmdf1 are contained in acmdf2, and what views are not?
-def viewdiff_summary(acmdf1, acmdf2, outdir, outname, db_details):
-    out_schema = ['ACM 1 Column', 'ACM 2 Column', 'Explanation']
+def viewdiff_summary(acmpath1, acmpath2, outdir, outname, db_details):
+    out_schema = ['Response File', 'ACM 1 Column', 'ACM 2 Column', 'Explanation']
     out_dct = {}
     for o in out_schema:
         out_dct[o] = []
-        
-    cols1 = acmdf1.columns.tolist()
+    
+    acmdf1 = pd.read_csv(acmpath1)
+    acmdf2 = pd.read_csv(acmpath2)
+    # cols1 = acmdf1.columns.tolist()
+    cols1 = [c for c in acmdf1.columns.tolist() if c != 'Role']
+    cols2 = [c for c in acmdf2.columns.tolist() if c != 'Role']
     for f in os.listdir(outdir):
-        if f.startswith(outname) and '_view' in f and f.endswith('.txt'):
+        pattern = re.compile('^(.*)_view[0-9]+.txt$')
+        if f.startswith(outname) and pattern_matches(pattern, f):
             #first, determine what ACM column f contains the mapping for.
-            v_ind = f.index('_view')
+            v_ind = f.rindex('_view')
             c_ind_st = f[v_ind + 5 : -4]
             c_ind = int(c_ind_st)
-            rel_col = cols1[c_ind]
             
             outfile = os.path.join(outdir, f)
             print("Reading file: {}".format(outfile))
             with open(outfile, 'r') as fh:
                 tup = literal_eval(fh.read())
             
-            out_dct['ACM 1 Column'] += [rel_col]
-            out_dct['ACM 2 Column'] += [tup[0]]
-            out_dct['Explanation'] += [tup[1]]
+            #first, we need to decide which set of columns tup came from,
+            #because it could be either in the case of SQL vs NL.
+            if len(tup) > 2 and tup[2] == acmpath1:
+                rel_col = cols2[c_ind]
+                out_dct['Response File'] += [outfile]
+                out_dct['ACM 1 Column'] += [tup[0]]
+                out_dct['ACM 2 Column'] += [rel_col]
+                out_dct['Explanation'] += [tup[1]]
+            elif len(tup) > 2 and tup[2] == acmpath2:
+                rel_col = cols1[c_ind]
+                out_dct['Response File'] += [outfile]
+                out_dct['ACM 1 Column'] += [rel_col]
+                out_dct['ACM 2 Column'] += [tup[0]]
+                out_dct['Explanation'] += [tup[1]]
+            else:
+                rel_col = cols1[c_ind]
+                out_dct['Response File'] += [outfile]
+                out_dct['ACM 1 Column'] += [rel_col]
+                out_dct['ACM 2 Column'] += [tup[0]]
+                out_dct['Explanation'] += [tup[1]]
     
     out_df = pd.DataFrame(out_dct)
     outpath = os.path.join(outdir, outname + '_viewcomplete.csv')
@@ -177,20 +257,28 @@ def nlvsnl_roles(nl1_acmdf, nl2_acmdf, nl1_roles, nl2_roles, outdir, outname):
         outfile = os.path.join(outdir, outname + '_nlvsnl_role' + str(i) + '.txt')
         if os.path.exists(outfile):
             continue
-        chat = [{'role' : 'system', 'content' : 'You are a helpful assistant.'}]
-        prompt = 'Consider the following list of descriptions for roles in a database:\n\n' + str(roles2) + '\n\n'
-        prompt += 'Consider the following phrase describing a database role: ' + r1 + '. '
-        prompt += 'Which database role description from the list most likely describes the same role as this phrase? Begin your answer with your chosen description from the list. If none of them match, begin your answer with None.'
-        prompt += ' If you are unsure, make your best guess.'
         
-        chat += [{'role' : 'user', 'content' : prompt}]
-        raw_resp = get_response(chat, 0.0)
-        parsed = parse_el(raw_resp, roles2, 'None')
-        if parsed == None:
-            print("Got nothing! {}, {}, {}".format(parsed, raw_resp, roles2))
-        answer = (parsed, raw_resp)
-        with open(outfile, 'w+') as fh:
-            print(answer, file=fh)
+        #first, check for exact match
+        if r1 in roles2:
+            answer = (r1, 'Exact Match.')
+            with open(outfile, 'w+') as fh:
+                print(answer, file=fh)
+        else:
+            
+            chat = [{'role' : 'system', 'content' : 'You are a helpful assistant.'}]
+            prompt = 'Consider the following list of descriptions for roles in a database:\n\n' + str(roles2) + '\n\n'
+            prompt += 'Consider the following phrase describing a database role: ' + r1 + '. '
+            prompt += 'Which database role description from the list most likely describes the same role as this phrase? Begin your answer with your chosen description from the list. If none of them match, begin your answer with None.'
+            prompt += ' If you are unsure, make your best guess.'
+            
+            chat += [{'role' : 'user', 'content' : prompt}]
+            raw_resp = get_response(chat, 0.0, write_dir=outdir, write_file=outname + '_nlvsnl_role' + str(i) + '_chat.json')
+            parsed = parse_elv2(raw_resp, roles2, 'None')
+            if parsed == None:
+                print("Got nothing! {}, {}, {}".format(parsed, raw_resp, roles2))
+            answer = (parsed, raw_resp)
+            with open(outfile, 'w+') as fh:
+                print(answer, file=fh)
 
 def nlvssql_roles(nl_acmdf, sql_acmdf, nl_roles, sql_roles, outdir, outname):
     acm_roles = nl_acmdf['Role'].tolist()
@@ -209,8 +297,8 @@ def nlvssql_roles(nl_acmdf, sql_acmdf, nl_roles, sql_roles, outdir, outname):
         prompt += ' If you are unsure, make your best guess.'
         
         chat += [{'role' : 'user', 'content' : prompt}]
-        raw_resp = get_response(chat, 0.0)
-        parsed = parse_el(raw_resp, db_roles, 'None')
+        raw_resp = get_response(chat, 0.0, write_dir=outdir, write_file=outname + '_nlvssql_role' + str(i) + '_chat.json')
+        parsed = parse_elv2(raw_resp, db_roles, 'None')
         if parsed == None:
             print("Got nothing! {}, {}, {}".format(parsed, raw_resp, db_roles))
         answer = (parsed, raw_resp)
@@ -255,7 +343,9 @@ def sqlvssql_roles(sqldf1, sqldf2, sql1_roles, sql2_roles, outdir, outname, db_d
         else:
             raise Exception("DB Role Case not captured: {}".format(r1))
 
-def diff_roles(acmdf1, acmdf2, outdir, outname, db_details):
+def diff_roles(acmpath1, acmpath2, outdir, outname, db_details):
+    acmdf1 = pd.read_csv(acmpath1)
+    acmdf2 = pd.read_csv(acmpath2)
     roles1 = acmdf1['Role'].tolist()
     roles2 = acmdf2['Role'].tolist()
     
@@ -275,47 +365,66 @@ def diff_roles(acmdf1, acmdf2, outdir, outname, db_details):
         nlvssql_roles(acmdf1, acmdf2, nl1_roles, sql2_roles, outdir, outname)
     
     if nl2_roles != [] and sql1_roles != []:
-        nlvssql_roles(acmdf2, acmdf2, nl2_roles, sql1_roles, outdir, outname)
+        nlvssql_roles(acmdf2, acmdf1, nl2_roles, sql1_roles, outdir, outname)
     
     if sql1_roles != [] and sql2_roles != []:
         sqlvssql_roles(acmdf1, acmdf2, sql1_roles, sql2_roles, outdir, outname, db_details)
 
 #what roles in acmdf1 are contained in acmdf2, and what roles are not?
-def rolediff_summary(acmdf1, acmdf2, outdir, outname, db_details):
+def rolediff_summary(acmpath1, acmpath2, outdir, outname, db_details, reparse=False):
+    acmdf1 = pd.read_csv(acmpath1)
+    acmdf2 = pd.read_csv(acmpath2)
     out_schema = ['ACM 1 Role', 'ACM 2 Role', 'Explanation']
     out_dct = {}
     for o in out_schema:
         out_dct[o] = []
         
     roles1 = acmdf1['Role'].tolist()
+    roles2 = acmdf2['Role'].tolist()
     for f in os.listdir(outdir):
-        if f.startswith(outname) and '_role' in f and f.endswith('.txt'):
+        pattern = re.compile('^(.*)_role[0-9]+.txt$')
+        if f.startswith(outname) and pattern_matches(pattern, f) and f.endswith('.txt'):
             #first, determine what ACM column f contains the mapping for.
-            v_ind = f.index('_role')
+            v_ind = f.rindex('_role')
             c_ind_st = f[v_ind + 5 : -4]
             c_ind = int(c_ind_st)
             rel_col = roles1[c_ind]
             
             outfile = os.path.join(outdir, f)
             with open(outfile, 'r') as fh:
-                tup = literal_eval(fh.read())
+                raw_tup = literal_eval(fh.read())
+            
+            if reparse:
+                raw_resp = raw_tup[1]
+                new_ans = parse_elv2(raw_resp, roles2, 'None')
+                tup = (new_ans, raw_resp)
+            else:
+                tup = raw_tup
+            
             print("Current Tuple: {}".format(tup))
-            out_dct['ACM 1 Role'] += [rel_col]
-            out_dct['ACM 2 Role'] += [tup[0]]
+            first_tup = rel_col
+            second_tup = tup[0]
+            if tup[0] not in roles2 and tup[0] in roles1:
+                #then, the answer actually came from roles1
+                first_tup = tup[0]
+                second_tup = roles2[c_ind]
+            
+            out_dct['ACM 1 Role'] += [first_tup]
+            out_dct['ACM 2 Role'] += [second_tup]
             out_dct['Explanation'] += [tup[1]]
     
     out_df = pd.DataFrame(out_dct)
     outpath = os.path.join(outdir, outname + '_rolecomplete.csv')
     out_df.to_csv(outpath, index=False)
 
-def nlvsnl_privs(nlpriv1, nlpriv2):
+def nlvsnl_privs(nlpriv1, nlpriv2, outdir, outfile):
     chat = [{'role' : 'system', 'content' : 'You are a helpful assistant.'}]
     prompt = 'Consider the following sentence/phrase describing database permissions for a role on a table: Privilege 1-' + nlpriv1 + '.'
     prompt += 'Consider the following other sentence/phrase describing database permissions for the same role on the same table: Privilege 2-' + nlpriv2 + '.'
     prompt += ' Of Privilege 1 and Privilege 2, which is more permissive? Begin your response with Privilege 1, Privilege 2, or Same. If you are unsure, make your best guess.'
     chat += [{'role' : 'user', 'content' : prompt}]
-    raw_resp = get_response(chat, 0.0)
-    answer = parse_el(raw_resp, ['Privilege 1', 'Privilege 2', 'Same'], 'None')
+    raw_resp = get_response(chat, 0.0, write_dir=outdir, write_file=outfile)
+    answer = parse_elv2(raw_resp, ['Privilege 1', 'Privilege 2', 'Same'], 'None')
     if answer == 'Privilege 1' or answer == 'Same':
         final_ans = (False, raw_resp)
     elif answer == 'Privilege 2':
@@ -325,13 +434,13 @@ def nlvsnl_privs(nlpriv1, nlpriv2):
     
     return final_ans
 
-def nlvssql_privs(nlpriv1, sqlpriv2):
+def nlvssql_privs(nlpriv1, sqlpriv2, outdir, outfile):
     chat = [{'role' : 'system', 'content' : 'You are a helpful assistant.'}]
     prompt = 'Consider the following sentence/phrase describing database permissions for a role on a table: Privilege 1-' + nlpriv1 + '.'
     prompt += 'Consider the following list of database permissions for the same role on the same table: Privilege 2-' + sqlpriv2 + '.'
     prompt += ' Is Privilege 2 a sufficient set of permissions for allowing Privilege 1? Begin your answer with YES or NO. If you are unsure, make your best guess.'
     chat += [{'role' : 'user', 'content' : prompt}]
-    raw_resp1 = get_response(chat, 0.0)
+    raw_resp1 = get_response(chat, 0.0, write_dir=outdir, write_file=outfile)
     ans1 = parse_yn(raw_resp1)
     if ans1 == 'NO':
         final_ans = (False, raw_resp1)
@@ -364,7 +473,9 @@ def sqlvssql_privs(sqlpriv1, sqlpriv2):
 #in order to test this, we need to look at the privileges described on the shared
 #roles and views, and point out the extra roles and views defined by acmdf2
 #and the missing roles and views from acmdf2.
-def diff_privs(acmdf1, acmdf2, indir, inname, outdir, outname):
+def diff_privs(acmpath1, acmpath2, indir, inname, outdir, outname):
+    acmdf1 = pd.read_csv(acmpath1)
+    acmdf2 = pd.read_csv(acmpath2)
     sql_privs = ['SELECT', 'GRANT', 'UPDATE', 'INSERT', 'DELETE', 'CREATE']
     inpref = os.path.join(indir, inname)
     viewdf = pd.read_csv(inpref + '_viewcomplete.csv')
@@ -403,27 +514,35 @@ def diff_privs(acmdf1, acmdf2, indir, inname, outdir, outname):
             #first, handle NaN cases
             if pd.isna(ent1) and pd.isna(ent2):
                 ans = (False, 'No privileges have been given in either ACM.')
+            elif ent1 == '[]' and ent2 == '[]':
+                ans = (False, 'No privileges have been given in either ACM.')
             elif pd.isna(ent1) and not pd.isna(ent2):
+                ans = (True, 'Blatant violation: no privileges should be given, but they are given in the second ACM: ' + ent2)
+            elif ent1 == '[]' and ent2 != '[]':
                 ans = (True, 'Blatant violation: no privileges should be given, but they are given in the second ACM: ' + ent2)
             elif not pd.isna(ent1) and pd.isna(ent2):
                 ans = (False, 'No privileges given in second ACM, but privileges are given in the first: ' + ent1 + '. While this is not a violation, this may merit further investigation.')
-            elif not pd.isna(ent1) and not pd.isna(ent2):
+            elif ent1 != '[]' and ent2 == '[]':
+                 ans = (False, 'No privileges given in second ACM, but privileges are given in the first: ' + ent1 + '. While this is not a violation, this may merit further investigation.')
+            elif not pd.isna(ent1) and not pd.isna(ent2) and ent1 != '[]' and ent2 != '[]':
                 is_sql1 = functools.reduce(lambda a, b: a or b, [priv in ent1 for priv in sql_privs])
                 is_sql2 = functools.reduce(lambda a, b: a or b, [priv in ent2 for priv in sql_privs])
                 
                 if not is_sql1 and not is_sql2:
-                    ans = nlvsnl_privs(ent1, ent2)
+                    ans = nlvsnl_privs(ent1, ent2, outdir, outname + '_row' + str(i) + '_col' + str(j) + '_chat.json')
                 elif not is_sql1 and is_sql2:
-                    ans = nlvssql_privs(ent1, ent2)
+                    ans = nlvssql_privs(ent1, ent2, outdir, outname + '_row' + str(i) + '_col' + str(j) + '_chat.json')
                 elif is_sql1 and not is_sql2:
-                    ans = nlvssql_privs(ent2, ent1)
+                    ans = nlvssql_privs(ent2, ent1, outdir, outname + '_row' + str(i) + '_col' + str(j) + '_chat.json')
                 elif is_sql1 and is_sql2:
                     ans = sqlvssql_privs(ent1, ent2)
             
             with open(outfile, 'w+') as fh:
                 print(ans, file=fh)
 
-def privdiff_summary(acmdf1, acmdf2, indir, inname, outdir, outname):
+def privdiff_summary(acmpath1, acmpath2, indir, inname, outdir, outname):
+    acmdf1 = pd.read_csv(acmpath1)
+    acmdf2 = pd.read_csv(acmpath2)
     out_schema = ['ACM 1 Role', 'ACM 1 View', 'ACM 2 Role', 'ACM 2 View',
                   'ACM 1 Privilege', 'ACM 2 Privilege', 'Violation', 'Explanation']
     out_dct = {}
@@ -474,18 +593,18 @@ def privdiff_summary(acmdf1, acmdf2, indir, inname, outdir, outname):
     out_df = pd.DataFrame(out_dct)
     out_df.to_csv(os.path.join(outdir, outname + '_privcomplete.csv'), index=False)
 
-def gen_completediff(acmdf1, acmdf2, indir, inname, outdir, outname, db_details):
+def gen_completediff(acmpath1, acmpath2, indir, inname, outdir, outname, db_details):
     if not os.path.exists(indir):
         os.mkdir(indir)
     
     if not os.path.exists(outdir):
         os.mkdir(outdir)
     
-    diff_views(acmdf1, acmdf2, indir, inname, db_details)
-    viewdiff_summary(acmdf1, acmdf2, indir, inname, db_details)
+    diff_views(acmpath1, acmpath2, indir, inname, db_details)
+    viewdiff_summary(acmpath1, acmpath2, indir, inname, db_details)
     
-    diff_roles(acmdf1, acmdf2, indir, inname, db_details)
-    rolediff_summary(acmdf1, acmdf2, indir, inname, db_details)
+    diff_roles(acmpath1, acmpath2, indir, inname, db_details)
+    rolediff_summary(acmpath1, acmpath2, indir, inname, db_details)
     
-    diff_privs(acmdf1, acmdf2, indir, inname, outdir, outname)
-    privdiff_summary(acmdf1, acmdf2, indir, inname, outdir, outname)
+    diff_privs(acmpath1, acmpath2, indir, inname, outdir, outname)
+    privdiff_summary(acmpath1, acmpath2, indir, inname, outdir, outname)
