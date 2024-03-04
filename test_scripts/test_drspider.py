@@ -219,6 +219,7 @@ def zip_nlq(drspider_dir, nl_predir, nl_postdir, sql_dir, db_name):
 
 if __name__=='__main__':
     drspider_dir = os.path.expanduser('~/diagnostic-robustness-text-to-sql')
+    #test credentials below. replace with database credentials where your spider databases are stored
     pg_details = {'user' : 'postgres', 'password' : 'dbrocks33', 'host' : '127.0.0.1', 'port' : '5432', 'database' : 'bike_1'}
     db_name = 'orchestra'
     nl_predir = 'nlpert_10_10_' + db_name + '_nl'
