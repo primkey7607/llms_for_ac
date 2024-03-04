@@ -1,4 +1,4 @@
-# LLMs for Access Control
+# Intent-based Access Control for Databases: Using LLMs to Intelligently Manage Access Control
 This is the official project page for the system that uses LLMs to generate access control code. The goal of the project is to support operations to help determine whether database SQL complies with access control matrices specified in natural language by non-expert users.
 
 We support the following operations
