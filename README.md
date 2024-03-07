@@ -1,19 +1,28 @@
-# Intent-based Access Control for Databases: Using LLMs to Intelligently Manage Access Control
-This is the official project page for the system that uses LLMs to generate access control code. The goal of the project is to support operations to help determine whether database SQL complies with access control matrices specified in natural language by non-expert users.
-
-We support the following operations
-1. Access Control SQL Generation (done): given an access control matrix that can have varying levels of natural language, convert it to SQL code that can be implemented on the database.
-2. Access Control Rule Verification (WIP): given an access control matrix and a database with access control rules already implemented, determine how the implemented rules differ from those specified in the access control matrix.
-3. Access Control Matrix Comparison (WIP): given two access control matrices expressing rules using potentially different levels of natural language, can we concisely describe which rules are shared by/exclusive to both?
-The input is a Type X access control matrix (ACM), and the output is SQL code.
+# LLM4AC: Intent-based Access Control for Databases: Using LLMs to Intelligently Manage Access Control
+This is the official project page for experiments that uses LLMs to generate access control code. The goal of the project is to support operations to help determine whether database SQL complies with access control matrices specified in natural language by non-expert users.
 
 # Setup
 1. This code uses OpenAI's API to prompt ChatGPT. It assumes you have set the ```OPENAI_API_KEY``` with your API key.
-2. Our current experiments assume the TPC-H dataset is the default database. To simplify the process of running experiments on different machines, we use the TPC-H benchmark as a collection of csvs. To generate this for yourself: (a) Clone this repo, and follow the instructions at this repo to generate the ```.tbl``` files: https://github.com/gregrahn/tpch-kit . (b) Convert the ```.tbl``` files to ```.csv``` files. (c) Put the csvs in directory, ```~/tpch-kit/scale1data/tpchcsvs```. (TODO: add support for directly querying postgres for the role and schema information--we already know how to do this, but we've ).
+2. Our current experiments use the TPC-H database and the following spider databases: ```department_manager```, ```culture_company```, ```bike_1```, ```car_1```, ```student_transcripts_tracking```, ```dog_kennels```, ```employee_hire_evaluation```, and ```orchestra``` databases. Download the Spider benchmark from here: https://yale-lily.github.io/spider and put the databases in postgres.
+3. Download the Dr. Spider benchmark from here: https://github.com/awslabs/diagnostic-robustness-text-to-sql .
+4. Run ```pip install -r requirements.txt```.
 
-The main APIs are ```tp{N+1}totpN``` and ```reconstruct_typeN```, and ```gen_tpNsql```. We give them for each type of ACM. For example, if your input ACM is a Type 2 ACM, then you will import ```from type2tosql import tp2totp1, reconstruct_type1, gen_tp1sql```, and call each of these functions consecutively.
-TODO (describe code, LLM instructions, and postgres setup)
+# Differencing Experiments
+We plan to provide the NLACMs in our benchmark. But if you want to generate them yourself, run ```drspider_to_acms.py``` and ```drspider_rolesprivs.py``` to generate the natural language access control matrices (NLACMs) from the Dr. Spider benchmark. We have used seeds in these scripts to ensure that the resulting NLACMs will be identical to those used in our experiment.
+For each of these scripts, change the ```db_name``` variable and run for each of databases: ```car_1```, ```student_transcripts_tracking```, ```dog_kennels```, ```employee_hire_evaluation```, and ```orchestra```.
 
-# Requirements
-TODO (will be described in requirements.txt)
+We have 5 scripts to run experiments, one for each method that the role-view mapping method of LLM4AC can use These are in the ```test_scripts``` directory:
+
+1. ```test_drspider.py```: uses the LLM only (also called "Plain LLM")
+2. ```test_tsllmdrspider.py```: uses DB literal pruning and the LLM (this is LLM4AC's default).
+3. ```test_semdrspider.py```: uses SentenceBERT to embed role strings and view strings, and then find the best match by comparing them using cosine similarity of their embeddings.
+4. ```test_worddrspider.py```: uses BERT to embed tokens in role strings and view strings, averages them, and then uses cosine similarity to compare embeddings. 
+5. ```test_textsimdrspider.py```: compares role/view strings using Jaccard similarity.
+
+Running any of these scripts will reproduce our experiments on one database. To decide the database, set the variable ```db_name```. Then, you need only run ```python test_X.py```.
+
+# Synthesizer Experiment
+Running ```python synthesizer_exp.py``` will construct the 10 x 33 NLACM used in our experiment, and automatically determine its performance in terms of execution accuracy of the resulting queries.
+
+
 
